@@ -21,6 +21,14 @@ cjk_family <- function() {
 # Signed label with one decimal; avoids "-0.0".
 sgn1 <- function(x) { x <- round(x, 1); x[x == 0] <- 0; sprintf("%+.1f", x) }
 
+# Push label positions apart so neighbours are at least `gap` apart, keeping order.
+spread_labels <- function(y, gap) {
+  o <- order(y); z <- y[o]
+  for (i in seq_along(z)[-1]) z[i] <- max(z[i], z[i - 1] + gap)
+  z <- z - (mean(z) - mean(y[o]))          # recentre around the original positions
+  out <- y; out[o] <- z; out
+}
+
 TXT <- list(
   en = list(
     title = "Patient %s: what the new measurements say about event timing",
@@ -59,6 +67,7 @@ plot_evidence <- function(res, file, lang = "zh", tail_len = 2) {
   e$name <- factor(e$name, levels = unique(e$name[match(ord, e$key)]))
   cols <- setNames(CFG$marker_colours[M], unique(e$name[match(M, e$key)]))
   endlab <- e[e$t1 == max(e$t1), ]
+  endlab$ylab <- spread_labels(endlab$y, 0.065 * diff(range(e$y)))
   s2 <- res$to_time; H <- res$horizon
   fmt <- function(x) formatC(x, format = "f", digits = 1)
   fmtH <- function(x) format(x, trim = TRUE)
@@ -70,7 +79,7 @@ plot_evidence <- function(res, file, lang = "zh", tail_len = 2) {
     geom_hline(yintercept = 0, colour = "#a9a8a1", linewidth = .35) +
     geom_step(aes(x = t0, y = y, colour = name), direction = "hv", linewidth = .4, alpha = .45) +
     geom_segment(aes(x = t0, xend = t1, y = y, yend = y, colour = name), linewidth = 1.15) +
-    geom_text(data = endlab, aes(x = t1 + .25, y = y, label = name, colour = name),
+    geom_text(data = endlab, aes(x = t1 + .25, y = ylab, label = name, colour = name),
               hjust = 0, size = 3.3, show.legend = FALSE) +
     scale_colour_manual(values = cols, guide = "none") +
     scale_x_continuous(expand = expansion(mult = c(.01, .28))) +
