@@ -21,6 +21,15 @@ CFG <- list(
   markers = c("serBilir", "albumin", "prothrombin", "platelets"),
   marker_labels = c(serBilir = "serum bilirubin (log)", albumin = "albumin",
                     prothrombin = "prothrombin time (transformed)", platelets = "platelets (log)"),
+  # for figures
+  marker_labels_short = c(serBilir = "Bilirubin", albumin = "Albumin",
+                          prothrombin = "Prothrombin", platelets = "Platelets"),
+  marker_labels_zh = c(serBilir = "胆红素", albumin = "白蛋白",
+                       prothrombin = "凝血酶原", platelets = "血小板"),
+  marker_colours = c(serBilir = "#2a78d6", albumin = "#eb6834",
+                     prothrombin = "#1baf7a", platelets = "#c98a00"),
+  time_unit_label = list(en = "years", zh = "年"),
+  plot_lang = "zh",   # falls back to "en" when no CJK font is installed
   marker_scale_note = "Values are on the pbc3 dataset's transformed scales (e.g. serBilir and platelets are log-transformed).",
   surv_vars = list("Tyears1", "Tyears2", "Tyears3", "Tyears4"),
   surv_funs = list(function(x) abs(x - 1), function(x) abs(x - 3),

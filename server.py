@@ -10,20 +10,23 @@ import asyncio
 import json
 import os
 import shutil
+import tempfile
 from pathlib import Path
 from typing import Any
 
 try:  # mcp >= 2
-    from mcp.server.mcpserver import MCPServer as _Server
+    from mcp.server.mcpserver import Image, MCPServer as _Server
     from mcp.server.mcpserver.exceptions import ToolError
 except ImportError:  # mcp 1.x
-    from mcp.server.fastmcp import FastMCP as _Server
+    from mcp.server.fastmcp import FastMCP as _Server, Image
     from mcp.server.fastmcp.exceptions import ToolError
 
 HERE = Path(__file__).resolve().parent
 BACKEND = HERE / "R" / "backend.R"
 RSCRIPT = os.environ.get("RSCRIPT", shutil.which("Rscript") or "Rscript")
 TIMEOUT = float(os.environ.get("BJM_TIMEOUT", "300"))
+# R must run in a UTF-8 locale to draw non-ASCII labels (e.g. Chinese figures).
+R_ENV = {**os.environ, "LC_ALL": os.environ.get("BJM_LOCALE", "C.UTF-8")} if os.name != "nt" else None
 
 INSTRUCTIONS = """\
 Tools for dynamic risk prediction with a fitted Backward Joint Model (BJM).
@@ -45,7 +48,7 @@ async def _call(tool: str, **kw: Any) -> dict:
     req = {"tool": tool, **{k: v for k, v in kw.items() if v is not None}}
     proc = await asyncio.create_subprocess_exec(
         RSCRIPT, "--vanilla", str(BACKEND), json.dumps(req),
-        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, env=R_ENV,
     )
     try:
         out, err = await asyncio.wait_for(proc.communicate(), TIMEOUT)
@@ -110,7 +113,9 @@ async def explain_risk_change_path(
     from_time: float | None = None,
     to_time: float | None = None,
     horizon: float | None = None,
-) -> dict:
+    plot: bool = True,
+    plot_lang: str | None = None,
+) -> list:
     """Method B: likelihood-ratio path decomposition of a risk change.
 
     Same question and defaults as explain_risk_change (method A), but explains
@@ -121,9 +126,21 @@ async def explain_risk_change_path(
     component, the evidence curves (bins of time after to_time; positive values
     = new data make an event in that bin more likely), and numerical checks.
     Use when the user asks *how* a marker's new data shifted the timing of
-    risk, or wants to compare the two attribution methods. Slower (~10-60 s)."""
-    return await _call("explain_risk_change_path", patient_id=patient_id,
-                       from_time=from_time, to_time=to_time, horizon=horizon)
+    risk, or wants to compare the two attribution methods. Slower (~10-60 s).
+
+    With plot=True (default) also returns a PNG of the evidence curves for the
+    clinician: x = future event time, shaded = risk window, each curve labelled
+    with that marker's contribution in pp. Show it to the user. plot_lang: "zh"
+    (default, falls back to "en" if no Chinese font) or "en"."""
+    with tempfile.TemporaryDirectory() as tmp:
+        png = Path(tmp) / f"evidence_{patient_id}.png"
+        res = await _call("explain_risk_change_path", patient_id=patient_id,
+                          from_time=from_time, to_time=to_time, horizon=horizon,
+                          plot_file=str(png) if plot else None, plot_lang=plot_lang)
+        out: list = [json.dumps(res, ensure_ascii=False)]
+        if plot and png.exists():
+            out.append(Image(data=png.read_bytes(), format="png"))
+    return out
 
 
 if __name__ == "__main__":

@@ -1,2 +1,3 @@
 models/*.rds
 __pycache__/
+tests/evidence_*.png

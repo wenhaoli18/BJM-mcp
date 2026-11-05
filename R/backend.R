@@ -9,7 +9,11 @@ suppressMessages({
 
 args <- commandArgs(trailingOnly = FALSE)
 here <- dirname(normalizePath(sub("^--file=", "", args[grep("^--file=", args)])))
-source(file.path(here, "config.R"))   # defines CFG (data, fits, markers, transforms)
+if (!isTRUE(l10n_info()[["UTF-8"]]))
+  for (loc in c("C.UTF-8", "en_US.UTF-8", "zh_CN.UTF-8"))
+    if (nzchar(suppressWarnings(Sys.setlocale("LC_CTYPE", loc)))) break
+source(file.path(here, "config.R"), encoding = "UTF-8")   # defines CFG (data, fits, markers, transforms)
+source(file.path(here, "plot.R"), encoding = "UTF-8")
 
 # ---------------------------------------------------------------- helpers
 patient_rows <- function(id) {
@@ -220,7 +224,7 @@ tool_explain_path <- function(req) {
     row.names = NULL)
   contrib <- contrib[order(-abs(contrib$psi_B_pp)), ]
 
-  list(patient_id = id, horizon = H, from_time = s1, to_time = s2,
+  res <- list(patient_id = id, horizon = H, from_time = s1, to_time = s2,
        risk_from_percent = round(100 * R1, 1), risk_to_percent = round(100 * R2, 1),
        change_pp = round(100 * (R2 - R1), 2),
        contributions = contrib,
@@ -238,6 +242,13 @@ tool_explain_path <- function(req) {
                       "for comparison; the two agree to first order and differ at second order.",
                       "B uses a binned posterior from predictRisk() CDFs, so it carries a small binning error."),
        warning = event_warning(d, s2))
+  if (!is.null(req$plot_file)) {
+    lang <- if (is.null(req$plot_lang)) CFG$plot_lang else req$plot_lang
+    res$plot_lang <- plot_evidence(res, req$plot_file, lang)
+    res$plot_note <- paste("Figure: per-marker evidence curves over future event time (centred);",
+                           "shaded = prediction window; curve labels = contribution in pp.")
+  }
+  res
 }
 
 # ---------------------------------------------------------------- dispatch
