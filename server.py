@@ -1,0 +1,106 @@
+"""MCP server exposing BJM (Backward Joint Model) dynamic prediction as tools.
+
+Each tool shells out to R/backend.R, which only calls BJM's public API.
+Run:  python server.py            (stdio transport, for Claude Desktop / Claude Code)
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import os
+import shutil
+from pathlib import Path
+from typing import Any
+
+try:  # mcp >= 2
+    from mcp.server.mcpserver import MCPServer as _Server
+    from mcp.server.mcpserver.exceptions import ToolError
+except ImportError:  # mcp 1.x
+    from mcp.server.fastmcp import FastMCP as _Server
+    from mcp.server.fastmcp.exceptions import ToolError
+
+HERE = Path(__file__).resolve().parent
+BACKEND = HERE / "R" / "backend.R"
+RSCRIPT = os.environ.get("RSCRIPT", shutil.which("Rscript") or "Rscript")
+TIMEOUT = float(os.environ.get("BJM_TIMEOUT", "300"))
+
+INSTRUCTIONS = """\
+Tools for dynamic risk prediction with a fitted Backward Joint Model (BJM).
+Typical questions: "What is patient 216's 2-year risk?" -> predict_risk.
+"Why did it change?" -> explain_risk_change (Shapley split of the change into
+time elapsed plus each biomarker's new measurements; parts sum exactly to the change).
+Call model_info first if unsure about the outcome, markers or time unit.
+Report risks as percentages and contributions in percentage points, name the
+time window, and pass on the model's caveats. Do not present results as
+clinical recommendations.
+"""
+
+mcp = _Server("bjm", instructions=INSTRUCTIONS)
+
+
+async def _call(tool: str, **kw: Any) -> dict:
+    req = {"tool": tool, **{k: v for k, v in kw.items() if v is not None}}
+    proc = await asyncio.create_subprocess_exec(
+        RSCRIPT, "--vanilla", str(BACKEND), json.dumps(req),
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        out, err = await asyncio.wait_for(proc.communicate(), TIMEOUT)
+    except asyncio.TimeoutError:
+        proc.kill()
+        raise ToolError(f"BJM backend timed out after {TIMEOUT:.0f}s")
+    try:
+        res = json.loads(out.decode())
+    except json.JSONDecodeError:
+        raise ToolError(f"BJM backend failed: {err.decode()[-2000:]}")
+    if not res.get("ok"):
+        raise ToolError(res.get("error", "unknown BJM error"))
+    return res["result"]
+
+
+@mcp.tool()
+async def model_info() -> dict:
+    """Describe the loaded BJM: dataset, outcome, biomarkers, time unit, caveats."""
+    return await _call("model_info")
+
+
+@mcp.tool()
+async def patient_history(patient_id: str) -> dict:
+    """Baseline covariates and all biomarker measurements (by visit time) for one patient."""
+    return await _call("patient_history", patient_id=patient_id)
+
+
+@mcp.tool()
+async def predict_risk(
+    patient_id: str,
+    horizon: float | None = None,
+    prediction_time: float | None = None,
+) -> dict:
+    """Dynamic risk of the event within `horizon` (default 2, in the model's time
+    unit) after `prediction_time`, given event-free at that time and the patient's
+    biomarker history up to it. `prediction_time` defaults to the latest visit."""
+    return await _call("predict_risk", patient_id=patient_id,
+                       horizon=horizon, prediction_time=prediction_time)
+
+
+@mcp.tool()
+async def explain_risk_change(
+    patient_id: str,
+    from_time: float | None = None,
+    to_time: float | None = None,
+    horizon: float | None = None,
+) -> dict:
+    """Explain why a patient's risk changed between two time points.
+
+    Computes risk at `from_time` and `to_time` (defaults: the previous and the
+    latest visit) and splits the change exactly into: 'time' (moving the
+    prediction time forward with no new data) plus one Shapley contribution per
+    biomarker for its new measurements in (from_time, to_time]. Returns
+    contributions sorted by size, with marker values at both times. Takes ~5 s."""
+    return await _call("explain_risk_change", patient_id=patient_id,
+                       from_time=from_time, to_time=to_time, horizon=horizon)
+
+
+if __name__ == "__main__":
+    mcp.run()
