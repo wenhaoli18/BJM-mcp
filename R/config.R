@@ -27,6 +27,9 @@ CFG <- list(
                    function(x) abs(x - 5), function(x) abs(x - 7)),
   default_horizon = 2,
   bandcount1 = 40, bandcount2 = 80,
+  # Method B: horizons (after to_time) defining posterior bins, and its bandcounts
+  path_horizons = c(0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5, 6, 8, 10, 13, 16),
+  path_bandcount1 = 60, path_bandcount2 = 120,
   caveats = c("Research demo: no model selection or calibration check was done.",
               "Not validated for clinical decision-making.")
 )

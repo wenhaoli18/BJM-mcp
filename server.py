@@ -30,6 +30,8 @@ Tools for dynamic risk prediction with a fitted Backward Joint Model (BJM).
 Typical questions: "What is patient 216's 2-year risk?" -> predict_risk.
 "Why did it change?" -> explain_risk_change (Shapley split of the change into
 time elapsed plus each biomarker's new measurements; parts sum exactly to the change).
+"How did the new data shift the risk over time?" / "compare methods" ->
+explain_risk_change_path (method B: evidence curves + path decomposition).
 Call model_info first if unsure about the outcome, markers or time unit.
 Report risks as percentages and contributions in percentage points, name the
 time window, and pass on the model's caveats. Do not present results as
@@ -99,6 +101,28 @@ async def explain_risk_change(
     biomarker for its new measurements in (from_time, to_time]. Returns
     contributions sorted by size, with marker values at both times. Takes ~5 s."""
     return await _call("explain_risk_change", patient_id=patient_id,
+                       from_time=from_time, to_time=to_time, horizon=horizon)
+
+
+@mcp.tool()
+async def explain_risk_change_path(
+    patient_id: str,
+    from_time: float | None = None,
+    to_time: float | None = None,
+    horizon: float | None = None,
+) -> dict:
+    """Method B: likelihood-ratio path decomposition of a risk change.
+
+    Same question and defaults as explain_risk_change (method A), but explains
+    the change through the new data's *evidence about event time*: per-marker
+    evidence curves phi_k(t) (log-likelihood-ratio of new data over event-time
+    bins) and psi_k = contribution of marker k, integrated along evidence
+    strength 0 -> 1. Returns psi (method B) next to Shapley (method A) per
+    component, the evidence curves (bins of time after to_time; positive values
+    = new data make an event in that bin more likely), and numerical checks.
+    Use when the user asks *how* a marker's new data shifted the timing of
+    risk, or wants to compare the two attribution methods. Slower (~10-60 s)."""
+    return await _call("explain_risk_change_path", patient_id=patient_id,
                        from_time=from_time, to_time=to_time, horizon=horizon)
 
 
