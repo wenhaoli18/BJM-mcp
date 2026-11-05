@@ -126,7 +126,7 @@ tool_explain_change <- function(req) {
     row.names = NULL)
   contrib <- contrib[order(-abs(contrib$contribution)), ]
 
-  list(patient_id = id, horizon = H, from_time = s1, to_time = s2,
+  res <- list(patient_id = id, horizon = H, from_time = s1, to_time = s2,
        risk_from = R1, risk_to = R2,
        risk_from_percent = round(100 * R1, 1), risk_to_percent = round(100 * R2, 1),
        change_pp = round(100 * (R2 - R1), 2),
@@ -139,6 +139,13 @@ tool_explain_change <- function(req) {
                       "from moving the prediction time forward with no new measurements.",
                       "Contributions sum exactly to the risk change."),
        warning = event_warning(d, s2))
+  if (!is.null(req$plot_file)) {
+    lang <- if (is.null(req$plot_lang)) CFG$plot_lang else req$plot_lang
+    res$plot_lang <- plot_waterfall(res, req$plot_file, lang)
+    res$plot_note <- paste("Figure: waterfall from the earlier risk to the later risk; grey = time elapsed,",
+                           "red = marker raised risk, blue = lowered risk; bar labels in pp.")
+  }
+  res
 }
 
 # Method B (BJM-attribution, psi.R / run.R): likelihood-ratio path decomposition.

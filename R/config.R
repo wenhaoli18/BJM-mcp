@@ -28,7 +28,10 @@ CFG <- list(
                        prothrombin = "凝血酶原", platelets = "血小板"),
   marker_colours = c(serBilir = "#2a78d6", albumin = "#eb6834",
                      prothrombin = "#1baf7a", platelets = "#c98a00"),
+  outcome_short = "death or transplant",
+  outcome_zh = "死亡或肝移植",
   time_unit_label = list(en = "years", zh = "年"),
+  time_unit_singular = "year",   # English adjective form: "2-year risk"
   plot_lang = "zh",   # falls back to "en" when no CJK font is installed
   marker_scale_note = "Values are on the pbc3 dataset's transformed scales (e.g. serBilir and platelets are log-transformed).",
   surv_vars = list("Tyears1", "Tyears2", "Tyears3", "Tyears4"),

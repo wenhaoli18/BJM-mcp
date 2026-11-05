@@ -64,6 +64,17 @@ async def _call(tool: str, **kw: Any) -> dict:
     return res["result"]
 
 
+async def _call_with_plot(tool: str, plot: bool, plot_lang: str | None, **kw: Any) -> list:
+    """Run a tool that can draw a figure; return [JSON text, PNG image]."""
+    with tempfile.TemporaryDirectory() as tmp:
+        png = Path(tmp) / "figure.png"
+        res = await _call(tool, plot_file=str(png) if plot else None, plot_lang=plot_lang, **kw)
+        out: list = [json.dumps(res, ensure_ascii=False)]
+        if plot and png.exists():
+            out.append(Image(data=png.read_bytes(), format="png"))
+    return out
+
+
 @mcp.tool()
 async def model_info() -> dict:
     """Describe the loaded BJM: dataset, outcome, biomarkers, time unit, caveats."""
@@ -95,16 +106,23 @@ async def explain_risk_change(
     from_time: float | None = None,
     to_time: float | None = None,
     horizon: float | None = None,
-) -> dict:
+    plot: bool = True,
+    plot_lang: str | None = None,
+) -> list:
     """Explain why a patient's risk changed between two time points.
 
     Computes risk at `from_time` and `to_time` (defaults: the previous and the
     latest visit) and splits the change exactly into: 'time' (moving the
     prediction time forward with no new data) plus one Shapley contribution per
     biomarker for its new measurements in (from_time, to_time]. Returns
-    contributions sorted by size, with marker values at both times. Takes ~5 s."""
-    return await _call("explain_risk_change", patient_id=patient_id,
-                       from_time=from_time, to_time=to_time, horizon=horizon)
+    contributions sorted by size, with marker values at both times. Takes ~5 s.
+
+    With plot=True (default) also returns a PNG waterfall chart for the
+    clinician: earlier risk -> time elapsed -> each marker (red raises, blue
+    lowers, in pp) -> later risk. Show it to the user. plot_lang: "zh"
+    (default, falls back to "en" if no Chinese font) or "en"."""
+    return await _call_with_plot("explain_risk_change", plot, plot_lang, patient_id=patient_id,
+                                 from_time=from_time, to_time=to_time, horizon=horizon)
 
 
 @mcp.tool()
@@ -132,15 +150,8 @@ async def explain_risk_change_path(
     clinician: x = future event time, shaded = risk window, each curve labelled
     with that marker's contribution in pp. Show it to the user. plot_lang: "zh"
     (default, falls back to "en" if no Chinese font) or "en"."""
-    with tempfile.TemporaryDirectory() as tmp:
-        png = Path(tmp) / f"evidence_{patient_id}.png"
-        res = await _call("explain_risk_change_path", patient_id=patient_id,
-                          from_time=from_time, to_time=to_time, horizon=horizon,
-                          plot_file=str(png) if plot else None, plot_lang=plot_lang)
-        out: list = [json.dumps(res, ensure_ascii=False)]
-        if plot and png.exists():
-            out.append(Image(data=png.read_bytes(), format="png"))
-    return out
+    return await _call_with_plot("explain_risk_change_path", plot, plot_lang, patient_id=patient_id,
+                                 from_time=from_time, to_time=to_time, horizon=horizon)
 
 
 if __name__ == "__main__":

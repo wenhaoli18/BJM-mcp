@@ -1,6 +1,6 @@
-# Evidence-curve figure for explain_risk_change_path (method B).
-# Draws per-marker evidence curves over future event time, centred under the
-# "no new data" posterior, with each curve labelled by its contribution (pp).
+# Figures returned by the MCP tools:
+#   plot_evidence()  - method B evidence curves (explain_risk_change_path)
+#   plot_waterfall() - method A Shapley waterfall (explain_risk_change)
 
 suppressMessages(library(ggplot2))
 
@@ -17,6 +17,9 @@ cjk_family <- function() {
   hit <- CJK_FAMILIES[CJK_FAMILIES %in% fams]
   if (length(hit)) hit[1] else NA_character_
 }
+
+# Signed label with one decimal; avoids "-0.0".
+sgn1 <- function(x) { x <- round(x, 1); x[x == 0] <- 0; sprintf("%+.1f", x) }
 
 TXT <- list(
   en = list(
@@ -49,7 +52,7 @@ plot_evidence <- function(res, file, lang = "zh", tail_len = 2) {
 
   e <- do.call(rbind, lapply(M, function(m) {
     y <- cv[[m]] - sum(p0 * cv[[m]])
-    data.frame(key = m, name = sprintf("%s  %+.1f pp", lab[[m]], pp[[m]]),
+    data.frame(key = m, name = sprintf("%s  %s pp", lab[[m]], sgn1(pp[[m]])),
                t0 = cv$from, t1 = to, y = y)
   }))
   ord <- M[order(-abs(pp[M]))]
@@ -75,9 +78,90 @@ plot_evidence <- function(res, file, lang = "zh", tail_len = 2) {
          subtitle = sprintf(tx$subtitle, fmt(res$from_time), fmt(res$to_time), unit, fmtH(H), unit,
                             res$risk_from_percent, res$risk_to_percent, res$change_pp),
          x = sprintf(tx$x, unit), y = tx$y,
-         caption = sprintf("%s  |  %s %+.1f pp", tx$caption, tx$time, pp[["time"]])) +
+         caption = sprintf("%s  |  %s %s pp", tx$caption, tx$time, sgn1(pp[["time"]]))) +
     theme_minimal(base_size = 11) +
     theme(panel.grid.minor = element_blank(),
+          plot.background = element_rect(fill = "white", colour = NA),
+          plot.title = element_text(face = "bold", size = 13),
+          plot.subtitle = element_text(colour = "#4a4944", size = 9.2, lineheight = 1.15),
+          plot.caption = element_text(colour = "#7a7973", size = 8),
+          plot.margin = margin(12, 14, 8, 10))
+  if (lang == "zh") g <- g + theme(text = element_text(family = fam))
+  dev <- if (requireNamespace("ragg", quietly = TRUE)) ragg::agg_png else "png"
+  ggsave(file, g, width = 8, height = 4.8, dpi = 160, bg = "white", device = dev)
+  invisible(lang)
+}
+
+TXT_WF <- list(
+  en = list(
+    title = "Patient %s: why did the %s-%s risk change?",
+    subtitle = paste0("Risk of %s within %s %s: %.1f%% at %s %s → %.1f%% at %s %s (%+.1f pp).\n",
+                      "Each bar: how much that item moved the risk (pp). They add up exactly to the change."),
+    from = "At %s %s", to = "At %s %s", time = "Time elapsed",
+    up = "Raises risk", down = "Lowers risk", total = "Predicted risk", tm = "Time elapsed",
+    y = "%s-%s risk (%%)",
+    caption = "BJM, Shapley attribution over new measurements (method A). Research use only."),
+  zh = list(
+    title = "病人 %s：%s %s风险为什么变了？",
+    subtitle = paste0("%s %s内%s的风险：第 %s %s %.1f%% → 第 %s %s %.1f%%（%+.1f 个百分点）。\n",
+                      "每根柱子表示该项使风险变化了多少个百分点，各项相加正好等于总变化。"),
+    from = "第 %s %s", to = "第 %s %s", time = "时间推进",
+    up = "升高风险", down = "降低风险", total = "预测风险", tm = "时间推进",
+    y = "%s %s风险（%%）",
+    caption = "BJM Shapley 归因（方法 A）。仅供研究，不作为临床决策依据。")
+)
+
+plot_waterfall <- function(res, file, lang = "zh") {
+  fam <- if (lang == "zh") cjk_family() else NA_character_
+  if (lang == "zh" && is.na(fam)) lang <- "en"
+  tx <- TXT_WF[[lang]]
+  if (!isTRUE(l10n_info()[["UTF-8"]])) tx$subtitle <- gsub("→", "->", tx$subtitle)
+  M <- CFG$markers
+  lab <- if (lang == "zh" && !is.null(CFG$marker_labels_zh)) CFG$marker_labels_zh[M] else CFG$marker_labels_short[M]
+  lab <- c(time = tx$time, lab)
+  unit <- CFG$time_unit_label[[lang]]
+  unit1 <- if (lang == "en" && !is.null(CFG$time_unit_singular)) CFG$time_unit_singular else unit
+  fmt <- function(x) formatC(x, format = "f", digits = 1)
+  fmtH <- function(x) format(x, trim = TRUE)
+  H <- res$horizon
+  outcome <- if (lang == "zh" && !is.null(CFG$outcome_zh)) CFG$outcome_zh else CFG$outcome_short
+
+  cb <- res$contributions
+  v <- setNames(100 * cb$contribution, cb$component)
+  v <- c(v["time"], v[M][order(-abs(v[M]))])
+  R1 <- 100 * res$risk_from; R2 <- 100 * res$risk_to
+  d <- data.frame(name = unname(lab[names(v)]), val = unname(v),
+                  kind = ifelse(names(v) == "time", "time", ifelse(v > 0, "up", "down")))
+  d$end <- R1 + cumsum(d$val); d$start <- d$end - d$val
+  d <- rbind(data.frame(name = sprintf(tx$from, fmt(res$from_time), unit), val = R1, kind = "total", end = R1, start = 0),
+             d,
+             data.frame(name = sprintf(tx$to, fmt(res$to_time), unit), val = R2, kind = "total", end = R2, start = 0))
+  d$x <- seq_len(nrow(d))
+  d$lbl <- ifelse(d$kind == "total", sprintf("%.1f%%", d$val), sgn1(d$val))
+  ytop <- max(d$start, d$end)
+
+  g <- ggplot(d) +
+    geom_rect(aes(xmin = x - .38, xmax = x + .38, ymin = start, ymax = end, fill = kind)) +
+    geom_segment(data = d[d$x < max(d$x), ], aes(x = x + .38, xend = x + .62, y = end, yend = end),
+                 colour = "#b5b4ad", linewidth = .3) +
+    geom_text(aes(x = x, y = pmax(start, end), label = lbl), vjust = -.55, size = 3.4, colour = "#2b2b29") +
+    scale_x_continuous(breaks = d$x, labels = d$name, expand = expansion(add = .3)) +
+    scale_y_continuous(expand = expansion(mult = c(0, .1)), limits = c(0, NA)) +
+    scale_fill_manual(values = c(total = "#c3c2b7", time = "#8a8985", up = "#e34948", down = "#2a78d6"),
+                      labels = c(total = tx$total, time = tx$tm, up = tx$up, down = tx$down),
+                      breaks = c("total", "time", "up", "down"), name = NULL) +
+    labs(title = sprintf(tx$title, res$patient_id, fmtH(H), unit1),
+         subtitle = if (lang == "zh")
+           sprintf(tx$subtitle, fmtH(H), unit, outcome, fmt(res$from_time), unit, R1,
+                   fmt(res$to_time), unit, R2, res$change_pp)
+         else sprintf(tx$subtitle, outcome, fmtH(H), unit, R1, fmt(res$from_time), unit,
+                      R2, fmt(res$to_time), unit, res$change_pp),
+         x = NULL, y = sprintf(tx$y, fmtH(H), unit1), caption = tx$caption) +
+    theme_minimal(base_size = 11) +
+    theme(panel.grid.major.x = element_blank(), panel.grid.minor = element_blank(),
+          panel.grid.major.y = element_line(colour = "#ecebe6", linewidth = .3),
+          axis.text.x = element_text(colour = "#3d3c38", size = 9.5),
+          legend.position = "top", legend.justification = "left",
           plot.background = element_rect(fill = "white", colour = NA),
           plot.title = element_text(face = "bold", size = 13),
           plot.subtitle = element_text(colour = "#4a4944", size = 9.2, lineheight = 1.15),

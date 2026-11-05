@@ -1,10 +1,18 @@
 """End-to-end smoke test: launch server.py over stdio and call each tool."""
-import asyncio, json, sys
+import asyncio, base64, json, sys
 from pathlib import Path
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 SERVER = str(Path(__file__).resolve().parents[1] / "server.py")
+
+def save_png(r, name):
+    imgs = [c for c in r.content if getattr(c, "type", "") == "image"]
+    assert imgs, "no image returned"
+    mime = getattr(imgs[0], "mime_type", None) or getattr(imgs[0], "mimeType", None)
+    assert mime == "image/png", mime
+    out = Path(__file__).with_name(name)
+    out.write_bytes(base64.b64decode(imgs[0].data)); print("figure ->", out)
 
 def payload(r):
     texts = [c for c in r.content if getattr(c, "type", "") == "text"]
@@ -24,17 +32,16 @@ async def main():
             print("tools:", [t.name for t in tools.tools])
             r = payload(await s.call_tool("predict_risk", {"patient_id": "216", "prediction_time": 4}))
             print("216 risk at t=4:", r["risk_percent"], "%")
-            r = payload(await s.call_tool("explain_risk_change", {"patient_id": "216", "from_time": 3, "to_time": 4}))
+            raw = await s.call_tool("explain_risk_change", {"patient_id": "216", "from_time": 3, "to_time": 4})
+            save_png(raw, "waterfall_216.png")
+            r = payload(raw)
             print(f"216: {r['risk_from_percent']}% -> {r['risk_to_percent']}%")
             for c in r["contributions"]:
                 print(f"  {c['component']:12s} {c['contribution_pp']:+.1f} pp")
             assert abs(r["risk_from"] - 0.0921) < 1e-3 and abs(r["risk_to"] - 0.3867) < 1e-3
             assert abs(r["closure_error"]) < 1e-10
             raw = await s.call_tool("explain_risk_change_path", {"patient_id": "216", "from_time": 3, "to_time": 4})
-            imgs = [c for c in raw.content if getattr(c, "type", "") == "image"]
-            assert imgs and imgs[0].mime_type == "image/png" if hasattr(imgs[0], "mime_type") else imgs[0].mimeType == "image/png"
-            import base64; out = Path(__file__).with_name("evidence_216.png")
-            out.write_bytes(base64.b64decode(imgs[0].data)); print("figure ->", out)
+            save_png(raw, "evidence_216.png")
             r = payload(raw)
             print(f"method B ({r['compute_seconds']}s):")
             for c in r["contributions"]:

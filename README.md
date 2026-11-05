@@ -20,7 +20,7 @@ Agent（Claude Desktop / Claude Code / 任何 MCP 客户端）会调用 BJM 回�
 | `model_info` | 数据集、结局、标志物、时间单位、注意事项 |
 | `patient_history(patient_id)` | 基线协变量和每次就诊的标志物值 |
 | `predict_risk(patient_id, horizon=2, prediction_time=最近一次就诊)` | 动态风险：已知在 prediction_time 时未发生事件，并结合截至该时的标志物历史，算出 horizon 内发生事件的概率 |
-| `explain_risk_change(patient_id, from_time=上一次就诊, to_time=最近一次就诊, horizon=2)` | **方法 A**：风险变化 ΔR = 时间推进 + 各标志物新测量的 Shapley 贡献，加总严格等于 ΔR |
+| `explain_risk_change(patient_id, from_time=上一次就诊, to_time=最近一次就诊, horizon=2)` | **方法 A**：风险变化 ΔR = 时间推进 + 各标志物新测量的 Shapley 贡献，加总严格等于 ΔR。默认还会返回一张瀑布图（PNG） |
 | `explain_risk_change_path(...)`（参数同上） | **方法 B**：似然比路径分解。先把新数据对事件时间的 log 似然比拆成各标志物的证据曲线 φ_k(t)，再对证据强度 ε 从 0 到 1 积分 Cov_ε(1_window, φ_k)，得到 ψ_k。同时返回方法 A 的值、证据曲线和数值检查。默认还会返回一张证据曲线图（PNG，`plot=True`，`plot_lang="zh"/"en"`） |
 
 速度（单个病人，4 个标志物）：方法 A 约 5 秒，共 18 次 `predictRisk` 调用；方法 B 在 4 核上约 10 秒，共 16 个子集 × 18 个 horizon 的 `predictRisk` 调用，按子集并行（用 `BJM_CORES` 控制核数）。
@@ -85,7 +85,13 @@ Claude Desktop（`claude_desktop_config.json`）：
 
 ψ 的加总与分箱后验下的 ΔR_data 相差 1e-9；分箱误差为 6.5e-5。与 BJM-attribution 中整体计算的 `psi.rds` 相比，血小板、白蛋白、凝血酶原一致，胆红素差 0.04 个百分点（单人计算是 25.08，143 人一起计算是 25.12）。原因是 `predictRisk` 根据当时的 at-risk 人群确定积分上界。
 
-### 证据曲线图
+### 瀑布图（方法 A）
+
+`explain_risk_change` 默认返回一张瀑布图：从前一时点的风险出发，依次加上时间推进和各标志物的贡献，最后到达后一时点的风险。红色表示升高风险，蓝色表示降低风险，单位为百分点。
+
+![病人 216 瀑布图](docs/waterfall_216_zh.png)
+
+### 证据曲线图（方法 B）
 
 `explain_risk_change_path` 默认把证据曲线画成图，作为图片随结果一起返回，客户端会直接显示给医生：
 
@@ -96,7 +102,7 @@ Claude Desktop（`claude_desktop_config.json`）：
 - 每条曲线末端标出该标志物对风险变化的贡献（方法 B，百分点）。时间推进的贡献写在图的右下角。
 - 以 216 为例：新的胆红素值把事件发生的可能性从远期（10 年以后）挪到了 2 年窗内，所以风险上升 25 个百分点；血小板的作用方向相反。
 
-图中标签默认用中文。系统里找不到中文字体（PingFang、微软雅黑、Noto CJK、文泉驿等）时，会自动改用英文。R 需要在 UTF-8 locale 下运行，server.py 已经替你设置好；如有需要，可以用 `BJM_LOCALE` 修改。
+两个工具都可以用 `plot=False` 关掉图，用 `plot_lang="en"` 改成英文。图中标签默认用中文。系统里找不到中文字体（PingFang、微软雅黑、Noto CJK、文泉驿等）时，会自动改用英文。R 需要在 UTF-8 locale 下运行，server.py 已经替你设置好；如有需要，可以用 `BJM_LOCALE` 修改。
 
 ## 换成自己的模型
 
