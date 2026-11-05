@@ -71,7 +71,7 @@ Claude Desktop（`claude_desktop_config.json`）：
 | 凝血酶原 prothrombin | +0.4 |
 | **合计** | **9.2% → 38.7%（+29.5）**，闭合误差 3e-17 |
 
-这与 BJM-attribution 中 landmark 3→4 的结果一致。
+这与 BJM-attribution 中 landmark 3→4 的结果一致。若不指定时间，则默认比较最近两次就诊（3.99 → 5.45 年：38.6% → 57.8%）。
 
 方法 B（`explain_risk_change_path`）的结果：
 
@@ -83,7 +83,7 @@ Claude Desktop（`claude_desktop_config.json`）：
 | 时间推进 | +5.99 | +5.99 |
 | 凝血酶原 | +0.33 | +0.36 |
 
-ψ 的加总与分箱后验下的 ΔR_data 相差 1e-9；分箱误差为 6.5e-5。与 BJM-attribution 中整体计算的 `psi.rds` 相比，血小板、白蛋白、凝血酶原一致，胆红素差 0.04 个百分点（单人计算是 25.08，143 人一起计算是 25.12）。原因是 `predictRisk` 根据当时的 at-risk 人群确定积分上界。若不指定时间，则默认比较最近两次就诊（3.99 → 5.45 年：38.6% → 57.8%）。
+ψ 的加总与分箱后验下的 ΔR_data 相差 1e-9；分箱误差为 6.5e-5。与 BJM-attribution 中整体计算的 `psi.rds` 相比，血小板、白蛋白、凝血酶原一致，胆红素差 0.04 个百分点（单人计算是 25.08，143 人一起计算是 25.12）。原因是 `predictRisk` 根据当时的 at-risk 人群确定积分上界。
 
 ## 换成自己的模型
 
